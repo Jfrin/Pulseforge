@@ -24,7 +24,7 @@ jobs:
     env:
       POLL_INTERVAL_S: "3"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Start the whole stack
         run: docker compose up -d --build --wait
       - name: Wait for the pipeline to move data
