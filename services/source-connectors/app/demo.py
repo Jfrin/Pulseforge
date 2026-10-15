@@ -1,4 +1,5 @@
 """`docker compose run source-connectors` walks a demo connector through the interface."""
+
 import asyncio
 
 from app.connectors import InMemoryConnector, SourceConnector, iter_pages

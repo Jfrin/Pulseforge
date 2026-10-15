@@ -3,18 +3,25 @@
 Reviews live in one append-only list ordered by created_at, so an offset cursor is stable
 and incremental polling ("everything after my cursor") works.
 """
+
 from __future__ import annotations
 
 import base64
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from faker import Faker
 
 from .models import Chaos
 
-EDITIONS = ["Deluxe Edition", "Definitive Edition", "Remastered", "Game of the Year Edition",
-            "Complete Edition", "Anniversary Edition"]
+EDITIONS = [
+    "Deluxe Edition",
+    "Definitive Edition",
+    "Remastered",
+    "Game of the Year Edition",
+    "Complete Edition",
+    "Anniversary Edition",
+]
 DLC_KINDS = ["Season Pass", "Expansion Pack", "Soundtrack", "Cosmetic Pack", "Character Pack"]
 STUDIO_WORDS = ["Interactive", "Studios", "Games", "Entertainment", "Labs"]
 FMT = "%Y-%m-%dT%H:%M:%SZ"
@@ -93,27 +100,55 @@ class MockState:
             released = fake.date_between("-8y", "-60d").isoformat()
             canonical = f"c-{n + 1:04d}"
 
-            def row(t, kind, p, players_scale=1.0, dev_name=dev, pub_name=pub):
+            def row(t, kind, p, players_scale=1.0, dev_name=dev, pub_name=pub, canonical=canonical, released=released):
                 return {
-                    "canonical": canonical, "title": t, "type": kind,
-                    "developer": dev_name, "publisher": pub_name,
-                    "price_cents": p, "currency": "USD", "release_date": released,
+                    "canonical": canonical,
+                    "title": t,
+                    "type": kind,
+                    "developer": dev_name,
+                    "publisher": pub_name,
+                    "price_cents": p,
+                    "currency": "USD",
+                    "release_date": released,
                     "player_count": int(rng.lognormvariate(6, 1.5) * players_scale),
                 }
 
             rows.append(row(title, "game", price))
             if rng.random() < 0.5:
-                rows.append(row(self._edition_title(title), "game", price + 1000,
-                                dev_name=self._noisy_company(dev), pub_name=self._noisy_company(pub)))
+                rows.append(
+                    row(
+                        self._edition_title(title),
+                        "game",
+                        price + 1000,
+                        dev_name=self._noisy_company(dev),
+                        pub_name=self._noisy_company(pub),
+                    )
+                )
             if rng.random() < 0.3:
-                rows.append(row(f"{title} - {rng.choice(DLC_KINDS)}", "dlc", rng.randint(299, 1499),
-                                0.2, self._noisy_company(dev), self._noisy_company(pub)))
+                rows.append(
+                    row(
+                        f"{title} - {rng.choice(DLC_KINDS)}",
+                        "dlc",
+                        rng.randint(299, 1499),
+                        0.2,
+                        self._noisy_company(dev),
+                        self._noisy_company(pub),
+                    )
+                )
             if rng.random() < 0.1:
-                rows.append(row(f"{title} + Expansion Bundle", "bundle", int(price * 1.4),
-                                0.3, self._noisy_company(dev), self._noisy_company(pub)))
+                rows.append(
+                    row(
+                        f"{title} + Expansion Bundle",
+                        "bundle",
+                        int(price * 1.4),
+                        0.3,
+                        self._noisy_company(dev),
+                        self._noisy_company(pub),
+                    )
+                )
 
         rng.shuffle(rows)  # variants of one game land on different pages
-        now = _iso(datetime.now(timezone.utc))
+        now = _iso(datetime.now(UTC))
         games, truth = [], {}
         for i, r in enumerate(rows, start=1):
             ext = f"g-{i:05d}"
@@ -136,7 +171,7 @@ class MockState:
 
     def _build_reviews(self) -> list[dict]:
         rng = self.rng
-        newest_allowed = datetime.now(timezone.utc) - timedelta(hours=1)
+        newest_allowed = datetime.now(UTC) - timedelta(hours=1)
         drafts = []
         for g in self.games:
             n = rng.randint(0, 200) if g["type"] == "game" else rng.randint(0, 30)
@@ -148,9 +183,12 @@ class MockState:
         return [self._new_review(gid, up, ts, who) for ts, gid, up, who in drafts]
 
     def inject_bomb(self, game_id: str, count: int, negative_share: float, spread_minutes: int) -> int:
-        now = datetime.now(timezone.utc)
-        last = datetime.strptime(self.reviews[-1]["created_at"], FMT).replace(tzinfo=timezone.utc) \
-            if self.reviews else now - timedelta(days=1)
+        now = datetime.now(UTC)
+        last = (
+            datetime.strptime(self.reviews[-1]["created_at"], FMT).replace(tzinfo=UTC)
+            if self.reviews
+            else now - timedelta(days=1)
+        )
         start = max(now - timedelta(minutes=spread_minutes), last)
         span = max((now - start).total_seconds(), 0)
         stamps = sorted(start + timedelta(seconds=self.rng.uniform(0, span)) for _ in range(count))

@@ -1,0 +1,30 @@
+name: source-connectors
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/source-connectors/**"
+      - "libs/**"
+      - ".github/workflows/source-connectors.yml"
+      - ".github/workflows/_python-service.yml"
+  pull_request:
+    paths:
+      - "services/source-connectors/**"
+      - "libs/**"
+      - ".github/workflows/source-connectors.yml"
+      - ".github/workflows/_python-service.yml"
+
+concurrency:
+  group: source-connectors-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_python-service.yml
+    with:
+      service: source-connectors

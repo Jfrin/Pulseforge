@@ -107,3 +107,29 @@ def test_reset_restores_catalog(client):
     n_before = len(walk(client, "/reviews"))
     client.post("/admin/reset")
     assert len(walk(client, "/reviews")) == n_before - 10
+
+
+def test_reviews_end_with_resume_token_and_pick_up_new_reviews(client):
+    cursor, last = None, None
+    while True:
+        q = {"limit": 500, **({"cursor": cursor} if cursor else {})}
+        body = client.get("/reviews", params=q).json()
+        last, cursor = body, body["next_cursor"]
+        if not body["has_more"]:
+            break
+    assert last["next_cursor"] is not None  # resume token even though has_more is False
+    empty = client.get("/reviews", params={"cursor": cursor}).json()
+    assert empty["items"] == [] and empty["next_cursor"] == cursor
+    client.post("/admin/review-bomb", json={"game_id": "g-00001", "count": 5})
+    fresh = client.get("/reviews", params={"cursor": cursor}).json()
+    assert len(fresh["items"]) == 5
+
+
+def test_games_snapshot_ends_without_token(client):
+    cursor = None
+    while True:
+        body = client.get("/games", params={"limit": 500, **({"cursor": cursor} if cursor else {})}).json()
+        if not body["has_more"]:
+            assert body["next_cursor"] is None
+            break
+        cursor = body["next_cursor"]

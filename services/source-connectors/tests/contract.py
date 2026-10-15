@@ -1,4 +1,5 @@
 """Reusable contract check. Every future connector's tests should call this."""
+
 from app.connectors import Page, SourceConnector, iter_pages
 
 

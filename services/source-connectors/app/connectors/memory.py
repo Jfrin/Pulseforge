@@ -8,12 +8,15 @@ from .base import Page
 class InMemoryConnector:
     """Deterministic connector over a list. Test double and reference implementation."""
 
-    def __init__(self, name: str, records: list[dict[str, Any]], page_size: int = 100) -> None:
+    def __init__(
+        self, name: str, records: list[dict[str, Any]], page_size: int = 100, resume_token_at_end: bool = False
+    ) -> None:
         if page_size < 1:
             raise ValueError("page_size must be >= 1")
         self.name = name
         self._records = records
         self._page_size = page_size
+        self._resume = resume_token_at_end
 
     async def fetch(self, cursor: str | None) -> Page:
         try:
@@ -25,4 +28,5 @@ class InMemoryConnector:
         end = offset + self._page_size
         chunk = [dict(r) for r in self._records[offset:end]]
         more = end < len(self._records)
-        return Page(records=chunk, next_cursor=str(end) if more else None, has_more=more)
+        token = str(end) if more else (str(offset + len(chunk)) if self._resume else None)
+        return Page(records=chunk, next_cursor=token, has_more=more)

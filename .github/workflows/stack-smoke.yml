@@ -1,0 +1,44 @@
+name: stack-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "docker-compose*.yml"
+      - "services/**"
+      - "libs/**"
+      - ".github/workflows/stack-smoke.yml"
+
+concurrency:
+  group: stack-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      POLL_INTERVAL_S: "3"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the whole stack
+        run: docker compose up -d --build --wait
+      - name: Wait for the pipeline to move data
+        run: |
+          for i in $(seq 1 30); do
+            n=$(docker compose exec -T source-connectors-db psql -U pulseforge -d source_connectors -tAc "select count(*) from outbox" || echo 0)
+            echo "outbox rows: $n"
+            [ "${n:-0}" -gt 0 ] && exit 0
+            sleep 2
+          done
+          echo "no outbox rows after 60s"; exit 1
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

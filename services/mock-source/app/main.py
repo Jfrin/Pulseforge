@@ -6,7 +6,7 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, Query
 
 from .models import Chaos, ReviewBomb
-from .state import MockState, paginate
+from .state import MockState, decode_cursor, encode_cursor, paginate
 
 
 def create_app(seed: int | None = None, base_games: int | None = None) -> FastAPI:
@@ -26,15 +26,21 @@ def create_app(seed: int | None = None, base_games: int | None = None) -> FastAP
         if roll < c.rate_limit_rate + c.error_rate:
             raise HTTPException(500, "injected failure")
 
-    def page(items: list, cursor: str | None, limit: int) -> dict:
+    def page(items: list, cursor: str | None, limit: int, resume: bool = False) -> dict:
+        """`resume=True` (append-only feeds): the last page still carries a next_cursor,
+        a resume token pointing at the end, so a poller can pick up new items later.
+        Snapshot catalogs return next_cursor=None at the end: start over next pass."""
         try:
             chunk, nxt = paginate(items, cursor, limit)
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
+        token = nxt
+        if nxt is None and resume:
+            token = encode_cursor(decode_cursor(cursor) + len(chunk))
         chunk = [dict(i) for i in chunk]
         if chunk and state.chaos_rng.random() < state.chaos.duplicate_rate:
             chunk.append(dict(state.chaos_rng.choice(chunk)))  # same record delivered twice
-        return {"items": chunk, "next_cursor": nxt, "has_more": nxt is not None}
+        return {"items": chunk, "next_cursor": token, "has_more": nxt is not None}
 
     @app.get("/health")
     def health() -> dict:
@@ -45,14 +51,13 @@ def create_app(seed: int | None = None, base_games: int | None = None) -> FastAP
         return page(state.games, cursor, limit)
 
     @app.get("/reviews", dependencies=[Depends(chaos_gate)])
-    def reviews(cursor: str | None = None, limit: int = Query(100, ge=1, le=1000),
-                game_id: str | None = None) -> dict:
+    def reviews(cursor: str | None = None, limit: int = Query(100, ge=1, le=1000), game_id: str | None = None) -> dict:
         items = state.reviews
         if game_id is not None:
             if game_id not in state.game_index:
                 raise HTTPException(404, f"unknown game_id {game_id!r}")
             items = [r for r in items if r["game_id"] == game_id]
-        return page(items, cursor, limit)
+        return page(items, cursor, limit, resume=True)
 
     # ---- admin: control the scenario -----------------------------------
     @app.get("/admin/chaos")

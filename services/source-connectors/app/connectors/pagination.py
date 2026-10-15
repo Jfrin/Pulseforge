@@ -26,7 +26,5 @@ async def iter_pages(
         if max_pages is not None and count >= max_pages:
             return
         if page.next_cursor == cursor:
-            raise RuntimeError(
-                f"connector {connector.name!r} returned the same cursor {cursor!r}; refusing to loop"
-            )
+            raise RuntimeError(f"connector {connector.name!r} returned the same cursor {cursor!r}; refusing to loop")
         cursor = page.next_cursor

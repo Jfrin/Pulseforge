@@ -1,10 +1,30 @@
 # Test override: docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm <service>-test
 services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data   # throwaway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
   source-connectors-test:
     build:
       context: ./services/source-connectors
       target: test
     command: ["pytest", "-v"]
+    environment:
+      TEST_DATABASE_URL: postgresql://test:test@test-db:5432/test
+    depends_on:
+      test-db:
+        condition: service_healthy
+
   mock-source-test:
     build:
       context: ./services/mock-source

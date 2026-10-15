@@ -21,4 +21,4 @@ ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY app ./app
 USER app
-CMD ["python", "-m", "app.demo"]
+CMD ["python", "-m", "app.main"]

@@ -3,6 +3,7 @@
 Adding a source means writing a class that satisfies `SourceConnector`
 (plus a field mapper later) and nothing else.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +16,10 @@ class Page:
 
     `records` are raw payloads, untouched (bronze-layer material).
     `next_cursor` is an opaque token the connector understands; callers never parse it.
+
+    When `has_more` is False, `next_cursor` is either None (a snapshot source finished a full
+    pass: start over next time) or a resume token (an append-only feed: continue from here
+    next time to pick up new records).
     """
 
     records: list[dict[str, Any]]

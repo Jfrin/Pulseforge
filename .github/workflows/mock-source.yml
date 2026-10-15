@@ -1,0 +1,30 @@
+name: mock-source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/mock-source/**"
+      - "libs/**"
+      - ".github/workflows/mock-source.yml"
+      - ".github/workflows/_python-service.yml"
+  pull_request:
+    paths:
+      - "services/mock-source/**"
+      - "libs/**"
+      - ".github/workflows/mock-source.yml"
+      - ".github/workflows/_python-service.yml"
+
+concurrency:
+  group: mock-source-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_python-service.yml
+    with:
+      service: mock-source
