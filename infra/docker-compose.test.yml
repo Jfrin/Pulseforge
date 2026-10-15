@@ -1,0 +1,7 @@
+# Test override: use together with docker-compose.yml
+services:
+  source-connectors-test:
+    build:
+      context: ../services/source-connectors
+      target: test
+    command: ["pytest", "-v"]

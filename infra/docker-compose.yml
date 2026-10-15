@@ -1,0 +1,5 @@
+services:
+  source-connectors:
+    build:
+      context: ../services/source-connectors
+      target: runtime
