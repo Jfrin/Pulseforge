@@ -1,0 +1,12 @@
+# Test override: docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm <service>-test
+services:
+  source-connectors-test:
+    build:
+      context: ./services/source-connectors
+      target: test
+    command: ["pytest", "-v"]
+  mock-source-test:
+    build:
+      context: ./services/mock-source
+      target: test
+    command: ["pytest", "-v"]

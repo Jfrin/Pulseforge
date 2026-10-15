@@ -1,0 +1,26 @@
+services:
+  mock-source:
+    build:
+      context: ./services/mock-source
+      target: runtime
+    ports:
+      - "8090:8000"
+    environment:
+      MOCK_SEED: ${MOCK_SEED:-42}
+      MOCK_BASE_GAMES: ${MOCK_BASE_GAMES:-200}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  source-connectors:
+    build:
+      context: ./services/source-connectors
+      target: runtime
+    environment:
+      MOCK_SOURCE_URL: http://mock-source:8000
+    depends_on:
+      mock-source:
+        condition: service_healthy
