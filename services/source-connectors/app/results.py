@@ -15,3 +15,13 @@ class PassResult:
 
     new: int
     duplicates: int
+
+
+@dataclass(frozen=True, slots=True)
+class Batch:
+    """A cut micro-batch. `trigger` is 'size' (hit the record limit) or 'time' (oldest record aged out)."""
+
+    batch_id: str
+    source: str
+    trigger: str
+    record_count: int

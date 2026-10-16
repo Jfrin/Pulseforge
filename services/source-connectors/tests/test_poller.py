@@ -15,12 +15,16 @@ class FakeStore:
         self.cursors: dict[str, str | None] = {}
         self.events: list[dict] = []
         self.seen: set[tuple[str, str, str]] = set()
+        self.bronze_keys: list[str | None] = []
 
     async def get_cursor(self, source):
         return self.cursors.get(source)
 
-    async def commit_page(self, source, *, fetched_cursor, next_cursor, records, id_field="external_id"):
+    async def commit_page(
+        self, source, *, fetched_cursor, next_cursor, records, id_field="external_id", bronze_key=None
+    ):
         self.cursors[source] = next_cursor
+        self.bronze_keys.append(bronze_key)
         fresh = [k for k in key_records(records, id_field) if (source, k.external_id, k.payload_hash) not in self.seen]
         self.seen.update((source, k.external_id, k.payload_hash) for k in fresh)
         if fresh:
@@ -125,3 +129,36 @@ async def test_run_forever_retries_after_error_and_stops_on_event():
     stop.set()
     await asyncio.wait_for(task, timeout=1)
     assert set(ids(store)) == set(range(10))
+
+
+class FakeBronze:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.landed: list[tuple] = []
+
+    async def land_page(self, source, *, fetched_cursor, page, fetched_at=None):
+        if self.fail:
+            raise ConnectionError("object store down")
+        key = f"bronze/{len(self.landed)}"
+        self.landed.append((source, fetched_cursor, len(page.records)))
+        return key
+
+
+async def test_every_page_is_landed_in_bronze_and_its_key_reaches_the_store():
+    store, bronze = FakeStore(), FakeBronze()
+    await poller(conn(), store, bronze=bronze).poll_once()
+    assert bronze.landed == [("src", None, 3), ("src", "3", 3), ("src", "6", 3), ("src", "9", 1)]
+    assert store.bronze_keys == ["bronze/0", "bronze/1", "bronze/2", "bronze/3"]
+
+
+async def test_bronze_outage_fails_the_pass_without_advancing_the_checkpoint():
+    store = FakeStore()
+    with pytest.raises(ConnectionError):
+        await poller(conn(), store, bronze=FakeBronze(fail=True)).poll_once()
+    assert store.cursors == {} and store.events == []  # nothing committed, nothing skipped
+
+
+async def test_without_a_bronze_sink_pages_still_flow():
+    store = FakeStore()
+    await poller(conn(), store).poll_once()
+    assert ids(store) == list(range(10)) and set(store.bronze_keys) == {None}

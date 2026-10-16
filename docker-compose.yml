@@ -31,6 +31,25 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    # MinIO's community images were removed from Docker Hub. This is Silo, the maintained MinIO
+    # fork (same env vars, same `mc`). Any S3-compatible store works: override with S3_IMAGE.
+    image: ${S3_IMAGE:-pgsty/silo:RELEASE.2026-08-06T00-00-00Z}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-pulseforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   source-connectors:
     build:
       context: ./services/source-connectors
@@ -40,12 +59,21 @@ services:
       MOCK_SOURCE_URL: http://mock-source:8000
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-15}
       CATALOG_INTERVAL_S: ${CATALOG_INTERVAL_S:-300}
+      BATCH_SIZE: ${BATCH_SIZE:-500}
+      BATCH_MAX_AGE_S: ${BATCH_MAX_AGE_S:-300}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pulseforge}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
+      MINIO_BUCKET: ${MINIO_BUCKET:-pulseforge}
     restart: on-failure
     depends_on:
       mock-source:
         condition: service_healthy
       source-connectors-db:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   source_connectors_pgdata:
+  minio_data:

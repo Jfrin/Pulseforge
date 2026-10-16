@@ -23,14 +23,15 @@ jobs:
     timeout-minutes: 15
     env:
       POLL_INTERVAL_S: "3"
+      BATCH_MAX_AGE_S: "10"
     steps:
       - uses: actions/checkout@v4
       - name: Start the whole stack
         run: docker compose up -d --build --wait
-      - name: Wait for the pipeline to move data
+      - name: Wait for a batch that traces back to bronze
         run: |
           for i in $(seq 1 30); do
-            n=$(docker compose exec -T source-connectors-db psql -U pulseforge -d source_connectors -tAc "select count(*) from outbox" || echo 0)
+            n=$(docker compose exec -T source-connectors-db psql -U pulseforge -d source_connectors -tAc "select count(*) from outbox where jsonb_array_length(payload->'bronze_keys') > 0" || echo 0)
             echo "outbox rows: $n"
             [ "${n:-0}" -gt 0 ] && exit 0
             sleep 2

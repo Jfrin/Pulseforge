@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Any, Protocol
 
+from .bronze import BronzeSink, NullBronze
 from .connectors import SourceConnector, iter_pages
 from .results import CommitResult, PassResult
 
@@ -21,11 +22,12 @@ class CheckpointStore(Protocol):
         next_cursor: str | None,
         records: list[dict[str, Any]],
         id_field: str = ...,
+        bronze_key: str | None = ...,
     ) -> CommitResult: ...
 
 
 class Poller:
-    """Walks one connector from its saved checkpoint, committing after every page.
+    """Walks one connector from its saved checkpoint, landing then committing every page.
 
     The checkpoint is only advanced by `commit_page` (same transaction as the ledger and
     outbox writes), and the next page is only fetched after that commit, so after any crash
@@ -38,12 +40,14 @@ class Poller:
         store: CheckpointStore,
         *,
         id_field: str = "external_id",
+        bronze: BronzeSink | None = None,
         poll_interval_s: float = 15.0,
         retry_delay_s: float = 5.0,
     ) -> None:
         self._connector = connector
         self._store = store
         self._id_field = id_field
+        self._bronze: BronzeSink = bronze or NullBronze()
         self._poll_interval_s = poll_interval_s
         self._retry_delay_s = retry_delay_s
 
@@ -53,12 +57,16 @@ class Poller:
         start = await self._store.get_cursor(name)
         new = duplicates = 0
         async for cursor, page in iter_pages(self._connector, start_cursor=start):
+            # Land the raw page FIRST. If object storage is down the pass fails here, the checkpoint
+            # stays put and the page is fetched again later: no record ever skips bronze.
+            bronze_key = await self._bronze.land_page(name, fetched_cursor=cursor, page=page)
             result = await self._store.commit_page(
                 name,
                 fetched_cursor=cursor,
                 next_cursor=page.next_cursor,
                 records=page.records,
                 id_field=self._id_field,
+                bronze_key=bronze_key,
             )
             new += result.new
             duplicates += result.duplicates
