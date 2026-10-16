@@ -6,3 +6,4 @@ __pycache__/
 .coverage
 htmlcov/
 sample_data/
+CHECKLIST.md
