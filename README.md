@@ -317,32 +317,3 @@ _Fill in after load testing._
 ## Running a Live Demo
 
 The full stack fits on a single VM (roughly 4 vCPU and 8 GB RAM) running `docker compose` behind HTTPS. Keep the dashboard behind basic auth and the broker and Grafana admin ports private. The Kubernetes manifests are included for reference and are not required for the demo. A recorded walkthrough keeps the project demonstrable when the VM is off.
-
-## Roadmap
-
-- [ ] Mock source API with pagination, errors, duplicates, and review spikes
-- [ ] Shared schemas and event contracts
-- [ ] Source connector framework (interface, checkpoints, micro-batching)
-- [ ] First real connector (official store API)
-- [ ] Processing service (normalize, resolve, score)
-- [ ] Orchestrator with mock sources, waterfall, retries, idempotency
-- [ ] Governance service and audit log
-- [ ] Review-bomb detector with configurable thresholds
-- [ ] Docker Compose for the full stack
-- [ ] Dashboard
-- [ ] Analytics and anomaly alerts
-- [ ] API gateway and auth
-- [ ] Tracing and metrics (OpenTelemetry, Prometheus, Grafana)
-- [ ] CI/CD per service
-- [ ] Kubernetes manifests
-- [ ] Load test and published results
-- [ ] Additional real sources (Wikidata, IGDB) beyond the stub
-
-## Author
-
-**Your Name**
-[LinkedIn](#) | [Portfolio](#) | [Email](#)
-
-## License
-
-MIT
