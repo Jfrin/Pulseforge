@@ -29,8 +29,20 @@ async def main() -> None:
 
     # Snapshot catalogs re-emit everything each pass, so poll them slowly; feeds poll fast.
     pollers = [
-        Poller(games, store, cfg.catalog_interval_s, cfg.retry_delay_s),
-        Poller(reviews, store, cfg.poll_interval_s, cfg.retry_delay_s),
+        Poller(
+            games,
+            store,
+            id_field="external_id",
+            poll_interval_s=cfg.catalog_interval_s,
+            retry_delay_s=cfg.retry_delay_s,
+        ),
+        Poller(
+            reviews,
+            store,
+            id_field="review_id",
+            poll_interval_s=cfg.poll_interval_s,
+            retry_delay_s=cfg.retry_delay_s,
+        ),
     ]
     try:
         await asyncio.gather(*(p.run_forever(stop) for p in pollers))

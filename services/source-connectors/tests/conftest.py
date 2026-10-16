@@ -15,6 +15,6 @@ async def store():
     await s.open()
     await s.migrate()
     async with s.pool.connection() as conn:
-        await conn.execute("TRUNCATE checkpoints, outbox RESTART IDENTITY")
+        await conn.execute("TRUNCATE checkpoints, outbox, seen_records RESTART IDENTITY")
     yield s
     await s.close()

@@ -16,3 +16,14 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 
 CREATE INDEX IF NOT EXISTS outbox_unpublished ON outbox (id) WHERE published_at IS NULL;
+
+-- Dedup ledger. A record is "new" the first time its (source, external_id, payload_hash)
+-- is seen. Same payload re-polled = no-op; changed payload = new hash = new version.
+-- Payload bodies live in the outbox events (and later, bronze); this table is keys only.
+CREATE TABLE IF NOT EXISTS seen_records (
+    source        TEXT        NOT NULL,
+    external_id   TEXT        NOT NULL,
+    payload_hash  TEXT        NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, external_id, payload_hash)
+);
