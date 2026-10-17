@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,33 @@ class Store:
             row = await cur.fetchone()
         return row[0] if row else None
 
+    async def any_unseen(
+        self,
+        source: str,
+        records: list[dict[str, Any]],
+        id_field: str = "external_id",
+        ignore_fields: Sequence[str] = (),
+    ) -> bool:
+        """True if at least one record on this page is not in the ledger yet (read-only check)."""
+        keyed = key_records(records, id_field, ignore_fields)
+        if not keyed:
+            return False
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM unnest(%s::text[], %s::text[]) AS t(e, h)
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM seen_records s
+                        WHERE s.source = %s AND s.external_id = t.e AND s.payload_hash = t.h
+                    )
+                )
+                """,
+                ([k.external_id for k in keyed], [k.payload_hash for k in keyed], source),
+            )
+            row = await cur.fetchone()
+        return bool(row and row[0])
+
     async def commit_page(
         self,
         source: str,
@@ -76,6 +104,7 @@ class Store:
         records: list[dict[str, Any]],
         id_field: str = "external_id",
         bronze_key: str | None = None,
+        ignore_fields: Sequence[str] = (),
     ) -> CommitResult:
         """Advance the checkpoint, record new keys, and stage ONLY the new records, atomically.
 
@@ -83,7 +112,7 @@ class Store:
         (records staged, checkpoint not moved). Re-polled or repeated records are
         filtered out by the ledger, so downstream never sees them twice.
         """
-        keyed = key_records(records, id_field)
+        keyed = key_records(records, id_field, ignore_fields)
         fresh: list[Keyed] = []
         async with self.pool.connection() as conn:
             async with conn.transaction():

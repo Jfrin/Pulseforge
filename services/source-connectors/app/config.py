@@ -20,6 +20,13 @@ class Config:
     minio_secret_key: str
     minio_bucket: str
     minio_secure: bool
+    csv_import_dir: str | None
+    csv_id_field: str
+    csv_interval_s: float
+    steam_app_ids: tuple[int, ...]
+    steam_interval_s: float
+    steam_max_pages: int
+    steam_min_interval_s: float
 
     @classmethod
     def from_env(cls) -> Config:
@@ -38,4 +45,11 @@ class Config:
             minio_secret_key=os.getenv("MINIO_SECRET_KEY", "pulseforge-minio"),
             minio_bucket=os.getenv("MINIO_BUCKET", "pulseforge"),
             minio_secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
+            csv_import_dir=os.getenv("CSV_IMPORT_DIR") or None,  # unset = CSV import off
+            csv_id_field=os.getenv("CSV_ID_FIELD", "external_id"),
+            csv_interval_s=float(os.getenv("CSV_INTERVAL_S", "30")),
+            steam_app_ids=tuple(int(x) for x in os.getenv("STEAM_APP_IDS", "").replace(" ", "").split(",") if x),
+            steam_interval_s=float(os.getenv("STEAM_INTERVAL_S", "300")),
+            steam_max_pages=int(os.getenv("STEAM_MAX_PAGES", "10")),
+            steam_min_interval_s=float(os.getenv("STEAM_MIN_INTERVAL_S", "1.5")),
         )

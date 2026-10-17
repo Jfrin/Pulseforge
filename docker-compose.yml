@@ -65,7 +65,14 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pulseforge}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
       MINIO_BUCKET: ${MINIO_BUCKET:-pulseforge}
+      CSV_IMPORT_DIR: /imports
+      CSV_INTERVAL_S: ${CSV_INTERVAL_S:-30}
+      STEAM_APP_IDS: ${STEAM_APP_IDS:-}   # empty = real Steam polling is OFF
+      STEAM_INTERVAL_S: ${STEAM_INTERVAL_S:-300}
+      STEAM_MAX_PAGES: ${STEAM_MAX_PAGES:-10}
     restart: on-failure
+    volumes:
+      - ./imports:/imports:ro   # drop *.csv files here
     depends_on:
       mock-source:
         condition: service_healthy

@@ -1,22 +1,39 @@
 """Record identity: (external_id, payload_hash).
 
-The hash covers the whole raw payload, so an unchanged record re-polled is a duplicate,
-while a record whose content changed gets a new hash and counts as a new version.
+The hash covers the raw payload, so an unchanged record re-polled is a duplicate, while a record
+whose content changed gets a new hash and counts as a new version. Fields that churn without
+meaning anything (vote counts, playtime...) can be excluded with dotted paths ("author.playtime");
+the stored record is still the full, untouched payload.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 log = logging.getLogger("dedup")
 
 
-def payload_hash(record: dict[str, Any]) -> str:
-    canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+def _without(record: dict[str, Any], paths: Sequence[str]) -> dict[str, Any]:
+    out = copy.deepcopy(record)
+    for path in paths:
+        *parents, leaf = path.split(".")
+        node: Any = out
+        for part in parents:
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, dict):
+            node.pop(leaf, None)
+    return out
+
+
+def payload_hash(record: dict[str, Any], ignore_fields: Sequence[str] = ()) -> str:
+    hashed = _without(record, ignore_fields) if ignore_fields else record
+    canonical = json.dumps(hashed, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -27,7 +44,7 @@ class Keyed:
     record: dict[str, Any]
 
 
-def key_records(records: list[dict[str, Any]], id_field: str) -> list[Keyed]:
+def key_records(records: list[dict[str, Any]], id_field: str, ignore_fields: Sequence[str] = ()) -> list[Keyed]:
     """Attach identity to each record and drop repeats inside the page (first one wins).
 
     A record without `id_field` still gets a stable identity derived from its content,
@@ -37,7 +54,7 @@ def key_records(records: list[dict[str, Any]], id_field: str) -> list[Keyed]:
     out: list[Keyed] = []
     missing = 0
     for rec in records:
-        h = payload_hash(rec)
+        h = payload_hash(rec, ignore_fields)
         raw = rec.get(id_field)
         if raw is None or raw == "":
             missing += 1

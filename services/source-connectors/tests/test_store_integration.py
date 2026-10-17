@@ -80,6 +80,31 @@ async def test_null_cursor_is_stored_and_read_back_as_none(store):
     assert await store.get_cursor("s") is None
 
 
+async def test_any_unseen_reflects_the_ledger(store):
+    recs = [{"id": 1}, {"id": 2}]
+    assert await store.any_unseen("s", recs, id_field="id") is True
+    await commit(store, recs)
+    assert await store.any_unseen("s", recs, id_field="id") is False
+    assert await store.any_unseen("s", [*recs, {"id": 3}], id_field="id") is True
+    assert await store.any_unseen("s", [{"id": 1, "v": 2}], id_field="id") is True  # changed payload = new version
+    assert await store.any_unseen("s", [], id_field="id") is False
+    assert await store.any_unseen("other", recs, id_field="id") is True  # the ledger is per source
+
+
+async def test_ignored_fields_make_a_churned_record_a_duplicate(store):
+    ign = ("votes",)
+    first = {"id": 1, "votes": 1}
+    await store.commit_page(
+        "s", fetched_cursor=None, next_cursor=None, records=[first], id_field="id", ignore_fields=ign
+    )
+    res = await store.commit_page(
+        "s", fetched_cursor=None, next_cursor=None, records=[{"id": 1, "votes": 9}], id_field="id", ignore_fields=ign
+    )
+    assert res.new == 0 and res.duplicates == 1
+    assert await store.any_unseen("s", [{"id": 1, "votes": 42}], id_field="id", ignore_fields=ign) is False
+    assert await store.any_unseen("s", [{"id": 1, "votes": 42}], id_field="id") is True
+
+
 # ---------------- micro-batching ----------------
 
 

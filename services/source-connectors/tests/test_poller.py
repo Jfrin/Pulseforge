@@ -20,12 +20,27 @@ class FakeStore:
     async def get_cursor(self, source):
         return self.cursors.get(source)
 
+    def _unseen(self, source, records, id_field, ignore_fields):
+        keyed = key_records(records, id_field, ignore_fields)
+        return [k for k in keyed if (source, k.external_id, k.payload_hash) not in self.seen]
+
+    async def any_unseen(self, source, records, id_field="external_id", ignore_fields=()):
+        return bool(self._unseen(source, records, id_field, ignore_fields))
+
     async def commit_page(
-        self, source, *, fetched_cursor, next_cursor, records, id_field="external_id", bronze_key=None
+        self,
+        source,
+        *,
+        fetched_cursor,
+        next_cursor,
+        records,
+        id_field="external_id",
+        bronze_key=None,
+        ignore_fields=(),
     ):
         self.cursors[source] = next_cursor
         self.bronze_keys.append(bronze_key)
-        fresh = [k for k in key_records(records, id_field) if (source, k.external_id, k.payload_hash) not in self.seen]
+        fresh = self._unseen(source, records, id_field, ignore_fields)
         self.seen.update((source, k.external_id, k.payload_hash) for k in fresh)
         if fresh:
             self.events.append({"cursor": fetched_cursor, "records": [k.record for k in fresh]})
@@ -162,3 +177,33 @@ async def test_without_a_bronze_sink_pages_still_flow():
     store = FakeStore()
     await poller(conn(), store).poll_once()
     assert ids(store) == list(range(10)) and set(store.bronze_keys) == {None}
+
+
+async def test_unchanged_pages_are_not_landed_again_but_a_changed_one_is():
+    store, bronze = FakeStore(), FakeBronze()
+    source = conn()
+    p = poller(source, store, bronze=bronze)
+    await p.poll_once()
+    first = len(bronze.landed)
+    assert first == 4
+
+    await p.poll_once()  # snapshot re-read, nothing changed
+    assert len(bronze.landed) == first
+
+    source._records[4]["v"] = 2  # record 4 lives on the second page
+    await p.poll_once()
+    assert len(bronze.landed) == first + 1 and bronze.landed[-1][1] == "3"
+
+
+async def test_volatile_fields_do_not_make_a_record_new_again():
+    store = FakeStore()
+    source = InMemoryConnector("src", [{"id": 1, "votes": 0, "meta": {"seen": 1, "x": "a"}}], page_size=5)
+    p = poller(source, store, ignore_fields=("votes", "meta.seen"))
+    assert (await p.poll_once()).new == 1
+
+    source._records[0]["votes"] = 9
+    source._records[0]["meta"]["seen"] = 2
+    assert (await p.poll_once()).new == 0  # only ignored fields changed
+
+    source._records[0]["meta"]["x"] = "b"
+    assert (await p.poll_once()).new == 1  # a real change is still a new version

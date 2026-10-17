@@ -7,7 +7,7 @@ import signal
 from .batcher import Batcher
 from .bronze import BronzeSink, MinioBronze, NullBronze
 from .config import Config
-from .connectors import MockSourceConnector
+from .connectors import STEAM_VOLATILE_FIELDS, CsvDirectoryConnector, MockSourceConnector, SteamReviewsConnector
 from .poller import Poller
 from .store import Store
 
@@ -36,7 +36,21 @@ async def main() -> None:
 
     games = MockSourceConnector("mock-games", cfg.mock_source_url, "/games", cfg.page_size)
     reviews = MockSourceConnector("mock-reviews", cfg.mock_source_url, "/reviews", cfg.page_size)
-    connectors = [games, reviews]
+    connectors: list[MockSourceConnector | SteamReviewsConnector] = [games, reviews]
+    csv_import = CsvDirectoryConnector("csv-import", cfg.csv_import_dir, cfg.page_size) if cfg.csv_import_dir else None
+
+    steam = (
+        SteamReviewsConnector(
+            "steam-reviews",
+            cfg.steam_app_ids,
+            max_pages_per_app=cfg.steam_max_pages,
+            min_interval_s=cfg.steam_min_interval_s,
+        )
+        if cfg.steam_app_ids
+        else None
+    )
+    if steam:
+        connectors.append(steam)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -62,10 +76,36 @@ async def main() -> None:
             retry_delay_s=cfg.retry_delay_s,
         ),
     ]
+    sources = [games.name, reviews.name]
+    if csv_import:
+        pollers.append(
+            Poller(
+                csv_import,
+                store,
+                id_field=cfg.csv_id_field,
+                bronze=bronze,
+                poll_interval_s=cfg.csv_interval_s,
+                retry_delay_s=cfg.retry_delay_s,
+            )
+        )
+        sources.append(csv_import.name)
+    if steam:
+        pollers.append(
+            Poller(
+                steam,
+                store,
+                id_field="recommendationid",
+                ignore_fields=STEAM_VOLATILE_FIELDS,
+                bronze=bronze,
+                poll_interval_s=cfg.steam_interval_s,
+                retry_delay_s=cfg.retry_delay_s,
+            )
+        )
+        sources.append(steam.name)
     try:
         batcher = Batcher(
             store,
-            [games.name, reviews.name],
+            sources,
             max_size=cfg.batch_size,
             max_age_s=cfg.batch_max_age_s,
             tick_s=cfg.batch_tick_s,

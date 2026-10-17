@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from .bronze import BronzeSink, NullBronze
@@ -14,6 +15,14 @@ log = logging.getLogger("poller")
 class CheckpointStore(Protocol):
     async def get_cursor(self, source: str) -> str | None: ...
 
+    async def any_unseen(
+        self,
+        source: str,
+        records: list[dict[str, Any]],
+        id_field: str = ...,
+        ignore_fields: Sequence[str] = ...,
+    ) -> bool: ...
+
     async def commit_page(
         self,
         source: str,
@@ -23,6 +32,7 @@ class CheckpointStore(Protocol):
         records: list[dict[str, Any]],
         id_field: str = ...,
         bronze_key: str | None = ...,
+        ignore_fields: Sequence[str] = ...,
     ) -> CommitResult: ...
 
 
@@ -40,6 +50,7 @@ class Poller:
         store: CheckpointStore,
         *,
         id_field: str = "external_id",
+        ignore_fields: Sequence[str] = (),
         bronze: BronzeSink | None = None,
         poll_interval_s: float = 15.0,
         retry_delay_s: float = 5.0,
@@ -47,6 +58,7 @@ class Poller:
         self._connector = connector
         self._store = store
         self._id_field = id_field
+        self._ignore_fields = tuple(ignore_fields)
         self._bronze: BronzeSink = bronze or NullBronze()
         self._poll_interval_s = poll_interval_s
         self._retry_delay_s = retry_delay_s
@@ -59,7 +71,10 @@ class Poller:
         async for cursor, page in iter_pages(self._connector, start_cursor=start):
             # Land the raw page FIRST. If object storage is down the pass fails here, the checkpoint
             # stays put and the page is fetched again later: no record ever skips bronze.
-            bronze_key = await self._bronze.land_page(name, fetched_cursor=cursor, page=page)
+            # Pages with nothing new (a snapshot source re-read) are not landed again.
+            bronze_key = None
+            if page.records and await self._store.any_unseen(name, page.records, self._id_field, self._ignore_fields):
+                bronze_key = await self._bronze.land_page(name, fetched_cursor=cursor, page=page)
             result = await self._store.commit_page(
                 name,
                 fetched_cursor=cursor,
@@ -67,6 +82,7 @@ class Poller:
                 records=page.records,
                 id_field=self._id_field,
                 bronze_key=bronze_key,
+                ignore_fields=self._ignore_fields,
             )
             new += result.new
             duplicates += result.duplicates
