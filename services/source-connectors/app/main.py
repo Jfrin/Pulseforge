@@ -8,6 +8,7 @@ from .batcher import Batcher
 from .bronze import BronzeSink, MinioBronze, NullBronze
 from .config import Config
 from .connectors import STEAM_VOLATILE_FIELDS, CsvDirectoryConnector, MockSourceConnector, SteamReviewsConnector
+from .ingress import build_ingress
 from .poller import Poller
 from .store import Store
 
@@ -102,6 +103,9 @@ async def main() -> None:
             )
         )
         sources.append(steam.name)
+    ingress = await build_ingress(store, bronze, retry_delay_s=cfg.retry_delay_s)
+    pollers.extend(ingress.pollers)
+    sources.extend(ingress.sources)
     try:
         batcher = Batcher(
             store,
@@ -110,10 +114,15 @@ async def main() -> None:
             max_age_s=cfg.batch_max_age_s,
             tick_s=cfg.batch_tick_s,
         )
-        await asyncio.gather(batcher.run_forever(stop), *(p.run_forever(stop) for p in pollers))
+        await asyncio.gather(
+            batcher.run_forever(stop),
+            *(p.run_forever(stop) for p in pollers),
+            *ingress.background(stop),
+        )
     finally:
         for c in connectors:
             await c.aclose()
+        await ingress.aclose()
         await store.close()
 
 

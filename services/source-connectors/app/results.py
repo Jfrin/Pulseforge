@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,3 +26,13 @@ class Batch:
     source: str
     trigger: str
     record_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxEvent:
+    """One row of the outbox table, as read by a relay (mirrors the table's columns)."""
+
+    id: int
+    event_type: str
+    source: str
+    payload: dict[str, Any]
