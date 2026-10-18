@@ -84,7 +84,7 @@ class Report:
 def evaluate(
     games: list[Game], truth_by_external_id: dict[str, str], threshold: float = 90.0, examples: int = 8
 ) -> Report:
-    resolver = Resolver(threshold=threshold)
+    resolver = Resolver(threshold=threshold, review_threshold=min(80.0, threshold))
     for game in games:
         resolver.resolve(game)
     predicted = resolver.assignments()

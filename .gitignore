@@ -13,3 +13,4 @@ CHECKLIST.md
 # CSV import: keep the example, ignore real data dropped into imports/
 imports/*.csv
 !imports/example_games.csv
+changes.txt

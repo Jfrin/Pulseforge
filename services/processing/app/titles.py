@@ -85,6 +85,15 @@ def analyze_title(title: str) -> TitleKey:
     tokens = tokenize(title)
     markers: list[str] = []
     variant = "base"
+    # A title consisting entirely of one marker phrase is still a title, not a variant.
+    if any(tuple(tokens) == phrase for phrase, _ in _MARKERS):
+        significant = [t for t in tokens if t not in STOPWORDS] or tokens
+        return TitleKey(
+            match_key=" ".join(significant),
+            variant=variant,
+            markers=tuple(markers),
+            numerals=_numerals(tokens),
+        )
     stripped = True
     while stripped:
         stripped = False
