@@ -30,3 +30,9 @@ services:
       context: ./services/mock-source
       target: test
     command: ["pytest", "-v"]
+
+  processing-test:
+    build:
+      context: ./services/processing
+      target: test
+    command: ["pytest", "-v"]

@@ -81,6 +81,18 @@ services:
       minio:
         condition: service_healthy
 
+  processing:
+    build:
+      context: ./services/processing
+      target: runtime
+    profiles: ["tools"]
+    environment:
+      PSEUDONYM_SALT: ${PSEUDONYM_SALT:-dev-only-salt-change-me-0123456789}
+      MOCK_SOURCE_URL: http://mock-source:8000
+    depends_on:
+      mock-source:
+        condition: service_healthy
+
 volumes:
   source_connectors_pgdata:
   minio_data:

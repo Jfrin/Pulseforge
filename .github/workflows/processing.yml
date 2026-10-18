@@ -1,0 +1,30 @@
+name: processing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/processing/**"
+      - "libs/**"
+      - ".github/workflows/processing.yml"
+      - ".github/workflows/_python-service.yml"
+  pull_request:
+    paths:
+      - "services/processing/**"
+      - "libs/**"
+      - ".github/workflows/processing.yml"
+      - ".github/workflows/_python-service.yml"
+
+concurrency:
+  group: processing-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_python-service.yml
+    with:
+      service: processing
