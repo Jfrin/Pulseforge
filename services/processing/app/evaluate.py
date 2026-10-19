@@ -1,9 +1,10 @@
-"""Measure entity resolution against the mock source's ground truth.
+"""Measure entity resolution, against the mock source's ground truth or a hand-labeled CSV.
 
-    docker compose --profile tools run --rm processing python -m app.evaluate
+    python -m app.evaluate                       # mock catalog (easy)
+    python -m app.evaluate --difficulty hard     # reset the mock source to the hard catalog first
+    python -m app.evaluate --labels /data/labels.csv
 
-Pulls /games and /admin/ground-truth from the mock source, normalizes the games, resolves them, and
-prints pairwise precision/recall plus examples of wrong merges and splits.
+Prints pairwise precision/recall plus examples of wrong merges and splits.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 
 import httpx2 as httpx
 
+from .labels import load_labeled_games
 from .mappers import map_game
 from .metrics import Metrics, find_errors, pairwise_metrics
 from .models import Game, Lineage
@@ -58,11 +60,12 @@ class Report:
     false_merges: list[tuple[tuple[str, str], tuple[str, str]]]
     false_splits: list[tuple[tuple[str, str], tuple[str, str]]]
     threshold: float
+    origin: str = "mock catalog"
 
     def render(self) -> str:
         m = self.metrics
         lines = [
-            f"entity resolution on {m.items} records (threshold {self.threshold:g})",
+            f"entity resolution on {m.items} records from the {self.origin} (threshold {self.threshold:g})",
             f"  precision {m.precision:.4f}   recall {m.recall:.4f}   F1 {m.f1:.4f}",
             f"  products {m.predicted_clusters} predicted vs {m.true_clusters} true",
             f"  pairs: {m.correct_pairs} correct of {m.predicted_pairs} predicted, {m.true_pairs} true",
@@ -82,7 +85,11 @@ class Report:
 
 
 def evaluate(
-    games: list[Game], truth_by_external_id: dict[str, str], threshold: float = 90.0, examples: int = 8
+    games: list[Game],
+    truth_by_external_id: dict[str, str],
+    threshold: float = 90.0,
+    examples: int = 8,
+    origin: str = "mock catalog",
 ) -> Report:
     resolver = Resolver(threshold=threshold, review_threshold=max(1.0, threshold - 10.0))
     for game in games:
@@ -100,21 +107,32 @@ def evaluate(
         false_merges=merges,
         false_splits=splits,
         threshold=threshold,
+        origin=origin,
     )
 
 
 def main(argv: list[str] | None = None, client: httpx.Client | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate entity resolution against the mock source ground truth")
+    parser = argparse.ArgumentParser(description="Evaluate entity resolution")
     parser.add_argument("--url", default=os.getenv("MOCK_SOURCE_URL", "http://mock-source:8000"))
+    parser.add_argument("--difficulty", choices=["easy", "hard"], help="reset the mock source to this catalog first")
+    parser.add_argument("--labels", help="score against a hand-labeled CSV instead of the mock source")
     parser.add_argument("--threshold", type=float, default=90.0)
     parser.add_argument("--examples", type=int, default=8)
     args = parser.parse_args(argv)
 
-    http = client or httpx.Client(base_url=args.url, timeout=30.0)
-    games = normalize_games(fetch_all(http, "/games"))
-    truth_resp = http.get("/admin/ground-truth")
-    truth_resp.raise_for_status()
-    print(evaluate(games, truth_resp.json(), args.threshold, args.examples).render())
+    if args.labels:
+        games, truth = load_labeled_games(args.labels)
+        origin = f"hand-labeled sample ({args.labels})"
+    else:
+        http = client or httpx.Client(base_url=args.url, timeout=30.0)
+        if args.difficulty:
+            http.post("/admin/reset", params={"difficulty": args.difficulty}).raise_for_status()
+        games = normalize_games(fetch_all(http, "/games"))
+        truth_resp = http.get("/admin/ground-truth")
+        truth_resp.raise_for_status()
+        truth = truth_resp.json()
+        origin = f"mock catalog ({args.difficulty or 'as currently configured'})"
+    print(evaluate(games, truth, args.threshold, args.examples, origin).render())
     return 0
 
 

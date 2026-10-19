@@ -92,6 +92,8 @@ services:
     depends_on:
       mock-source:
         condition: service_healthy
+    volumes:
+      - ./services/processing/data:/data:ro
 
 volumes:
   source_connectors_pgdata:

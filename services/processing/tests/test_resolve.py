@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -7,7 +7,7 @@ from app.normalize import normalize_company
 from app.resolve import Resolver, resolve_games
 
 
-def game(external_id, title, developer=None, publisher=None, source="mock-games"):
+def game(external_id, title, developer=None, publisher=None, source="mock-games", release=None):
     dev, dev_key = normalize_company(developer)
     pub, pub_key = normalize_company(publisher if publisher is not None else developer)
     return Game(
@@ -21,7 +21,7 @@ def game(external_id, title, developer=None, publisher=None, source="mock-games"
         publisher_key=pub_key,
         price_cents=None,
         currency=None,
-        release_date=None,
+        release_date=release,
         player_count=None,
         observed_at=datetime(2026, 1, 1, tzinfo=UTC),
         lineage=Lineage(batch_id="b", source=source, bronze_key=None, payload_hash="h"),
@@ -52,6 +52,15 @@ def test_a_sequel_is_never_merged_with_the_original():
     assert a.product_id != b.product_id and b.is_new
 
 
+def test_roman_and_arabic_sequel_numbers_are_the_same_sequel():
+    r = Resolver()
+    a = r.resolve(game("1", "Neon Harbor II", "Vega Interactive"))
+    b = r.resolve(game("2", "Neon Harbor 2: Deluxe Edition", "Vega Interactive"))
+    c = r.resolve(game("3", "Neon Harbor III", "Vega Interactive"))
+    assert a.product_id == b.product_id
+    assert c.product_id != a.product_id
+
+
 def test_subtitles_and_spinoffs_stay_separate():
     r = Resolver()
     a = r.resolve(game("1", "Halo"))
@@ -66,10 +75,54 @@ def test_the_same_title_from_unrelated_studios_stays_separate():
     assert a.product_id != b.product_id
 
 
+def test_a_variant_that_arrived_first_does_not_attract_a_same_title_game_from_another_studio():
+    r = Resolver()
+    variant = r.resolve(game("1", "Inferno - Season Pass", "Alpha Games"))
+    other = r.resolve(game("2", "Inferno", "Beta Studios"))
+    assert variant.product_id != other.product_id
+
+
 def test_a_missing_studio_does_not_block_a_match():
     r = Resolver()
     a = r.resolve(game("1", "Paper Lanterns", "Lindqvist Games"))
     b = r.resolve(game("2", "Paper Lanterns Remastered"))  # no developer info at all
+    assert a.product_id == b.product_id
+
+
+def test_a_remaster_by_another_studio_is_still_the_same_product():
+    r = Resolver()
+    a = r.resolve(game("1", "Memory Campaign", "Johnson Interactive"))
+    b = r.resolve(game("2", "Memory Campaign Remastered", "Lloyd Games"))
+    assert a.product_id == b.product_id
+    assert "studio_conflict_softened_by_variant" in b.reasons
+
+
+def test_an_edition_name_nobody_listed_joins_when_studio_and_release_date_agree():
+    r = Resolver()
+    a = r.resolve(game("1", "Neon Harbor", "Vega Interactive", release=date(2020, 1, 1)))
+    b = r.resolve(game("2", "Neon Harbor Platinum Edition", "Vega Interactive Inc.", release=date(2020, 1, 10)))
+    assert a.product_id == b.product_id
+    assert "extension_same_release_window" in b.reasons
+
+
+def test_a_spin_off_released_years_later_stays_separate():
+    r = Resolver()
+    a = r.resolve(game("1", "Neon Harbor", "Vega Interactive", release=date(2020, 1, 1)))
+    b = r.resolve(game("2", "Neon Harbor Wars", "Vega Interactive", release=date(2023, 6, 1)))
+    assert a.product_id != b.product_id and b.is_new
+
+
+def test_a_title_plus_extra_words_needs_release_evidence_even_when_the_fuzzy_score_is_high():
+    r = Resolver()
+    a = r.resolve(game("1", "Different Much Material", "Leon Interactive"))
+    b = r.resolve(game("2", "Different Much Material Origins", "Leon Interactive"))  # no dates at all
+    assert a.product_id != b.product_id
+
+
+def test_a_typo_that_eats_a_space_still_matches():
+    r = Resolver()
+    a = r.resolve(game("1", "Use Rock Well", "Hernandez Entertainment"))
+    b = r.resolve(game("2", "Use Roc kWell + Expansion Bundle", "HernandezEntertainment"))
     assert a.product_id == b.product_id
 
 

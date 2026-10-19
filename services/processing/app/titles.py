@@ -33,28 +33,14 @@ _MARKERS = sorted(
     [(p, "edition") for p in _EDITION] + [(p, "dlc") for p in _DLC] + [(p, "bundle") for p in _BUNDLE],
     key=lambda item: -len(item[0]),
 )  # longest phrase first, so "game of the year edition" wins over "edition"
+# Words that precede "Deluxe Edition" in real listings ("Super Deluxe Edition", "Digital Deluxe Edition").
+# Only stripped when a marker was already found, so "Digital Dreams" stays intact.
+_EDITION_MODIFIERS = frozenset({"super", "digital", "ultra", "limited"})
 _MARKER_WORDS = frozenset(word for phrase, _ in _MARKERS for word in phrase)
-_ROMAN = frozenset(
-    {
-        "ii",
-        "iii",
-        "iv",
-        "vi",
-        "vii",
-        "viii",
-        "ix",
-        "xi",
-        "xii",
-        "xiii",
-        "xiv",
-        "xv",
-        "xvi",
-        "xvii",
-        "xviii",
-        "xix",
-        "xx",
-    }
-)
+_ROMAN_VALUES = {
+    "ii": 2, "iii": 3, "iv": 4, "vi": 6, "vii": 7, "viii": 8, "ix": 9, "xi": 11, "xii": 12, "xiii": 13,
+    "xiv": 14, "xv": 15, "xvi": 16, "xvii": 17, "xviii": 18, "xix": 19, "xx": 20,
+}  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +61,17 @@ def tokenize(title: str) -> list[str]:
     return re.findall(r"\w+", folded)
 
 
+def _arabize(tokens: list[str]) -> list[str]:
+    """Roman sequel numbers become digits ("Neon Harbor II" == "Neon Harbor 2").
+
+    A lone trailing V or X is NOT converted: "Mega Man X" must never equal "Mega Man 10".
+    """
+    return [str(_ROMAN_VALUES[t]) if t in _ROMAN_VALUES else t for t in tokens]
+
+
 def _numerals(tokens: list[str]) -> frozenset[str]:
-    found = {t for t in tokens if t.isdigit() or t in _ROMAN}
-    if len(tokens) > 1 and tokens[-1] in {"v", "x"}:  # "Final Fantasy X" (a lone v/x elsewhere is too ambiguous)
+    found = {t for t in tokens if t.isdigit()}
+    if len(tokens) > 1 and tokens[-1] in {"v", "x"}:  # "Final Fantasy X": a veto signal, kept as written
         found.add(tokens[-1])
     return frozenset(found)
 
@@ -97,6 +91,13 @@ def analyze_title(title: str) -> TitleKey:
                 variant = max(variant, kind, key=VARIANT_RANK.__getitem__)
                 stripped = True
                 break
+    if variant == "edition":
+        while len(tokens) > 1 and tokens[-1] in _EDITION_MODIFIERS:
+            markers.append(tokens.pop())
+    # "...Civilization V: The Complete Edition" leaves a trailing "the", which would hide the sequel number V
+    while len(tokens) > 1 and tokens[-1] in STOPWORDS:
+        tokens.pop()
+    tokens = _arabize(tokens)
     significant = [t for t in tokens if t not in STOPWORDS] or tokens
     return TitleKey(
         match_key=" ".join(significant),

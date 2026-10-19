@@ -1,0 +1,44 @@
+# STARTER sample labeled from general knowledge of well-known Steam titles. Replace or extend it with your own
+# labeling of real store data before quoting any number. Same label = same product (editions/remasters/DLC/bundles).
+title,developer,publisher,release_date,label
+The Witcher 3: Wild Hunt,CD PROJEKT RED,CD PROJEKT RED,,witcher3
+The Witcher 3: Wild Hunt - Game of the Year Edition,CD PROJEKT RED,CD PROJEKT RED,,witcher3
+The Witcher 3: Wild Hunt - Blood and Wine,CD PROJEKT RED,CD PROJEKT RED,,witcher3
+The Witcher 3: Wild Hunt - Hearts of Stone,CD PROJEKT RED,CD PROJEKT RED,,witcher3
+The Witcher 2: Assassins of Kings,CD PROJEKT RED,CD PROJEKT RED,,witcher2
+The Witcher 2: Assassins of Kings Enhanced Edition,CD PROJEKT RED,CD PROJEKT RED,,witcher2
+The Elder Scrolls V: Skyrim,Bethesda Game Studios,Bethesda Softworks,,skyrim
+The Elder Scrolls V: Skyrim Special Edition,Bethesda Game Studios,Bethesda Softworks,,skyrim
+The Elder Scrolls V: Skyrim Anniversary Edition,Bethesda Game Studios,Bethesda Softworks,,skyrim
+The Elder Scrolls V: Skyrim - Dawnguard,Bethesda Game Studios,Bethesda Softworks,,skyrim
+The Elder Scrolls IV: Oblivion,Bethesda Game Studios,Bethesda Softworks,,oblivion
+The Elder Scrolls IV: Oblivion Game of the Year Edition,Bethesda Game Studios,Bethesda Softworks,,oblivion
+Fallout 3,Bethesda Game Studios,Bethesda Softworks,,fallout3
+Fallout 3: Game of the Year Edition,Bethesda Game Studios,Bethesda Softworks,,fallout3
+Fallout 4,Bethesda Game Studios,Bethesda Softworks,,fallout4
+Fallout 4: Game of the Year Edition,Bethesda Game Studios,Bethesda Softworks,,fallout4
+Fallout: New Vegas,Obsidian Entertainment,Bethesda Softworks,,fallout_nv
+Fallout: New Vegas Ultimate Edition,Obsidian Entertainment,Bethesda Softworks,,fallout_nv
+Portal,Valve,Valve,,portal1
+Portal 2,Valve,Valve,,portal2
+Borderlands,Gearbox Software,2K,,borderlands1
+Borderlands: Game of the Year Edition,Gearbox Software,2K,,borderlands1
+Borderlands 2,Gearbox Software,2K,,borderlands2
+Borderlands 2: Game of the Year Edition,Gearbox Software,2K,,borderlands2
+Borderlands 3,Gearbox Software,2K,,borderlands3
+Borderlands 3 Super Deluxe Edition,Gearbox Software,2K,,borderlands3
+Borderlands: The Pre-Sequel,Gearbox Software,2K,,borderlands_presequel
+Dark Souls: Prepare To Die Edition,FromSoftware,Bandai Namco Entertainment,,darksouls1
+Dark Souls: Remastered,FromSoftware,Bandai Namco Entertainment,,darksouls1
+Dark Souls II,FromSoftware,Bandai Namco Entertainment,,darksouls2
+Dark Souls II: Scholar of the First Sin,FromSoftware,Bandai Namco Entertainment,,darksouls2
+Dark Souls III,FromSoftware,Bandai Namco Entertainment,,darksouls3
+Dark Souls III - Deluxe Edition,FromSoftware,Bandai Namco Entertainment,,darksouls3
+Prey,Human Head Studios,2K Games,,prey2006
+Prey,Arkane Studios,Bethesda Softworks,,prey2017
+Prey: Digital Deluxe Edition,Arkane Studios,Bethesda Softworks,,prey2017
+Sid Meier's Civilization V,Firaxis Games,2K,,civ5
+Sid Meier's Civilization V: The Complete Edition,Firaxis Games,2K,,civ5
+Sid Meier's Civilization VI,Firaxis Games,2K,,civ6
+Civilization VI,Firaxis Games,2K,,civ6
+Sid Meier's Civilization VI: Platinum Edition,Firaxis Games,2K,,civ6

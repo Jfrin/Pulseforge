@@ -71,3 +71,32 @@ def test_the_cli_prints_a_report(capsys):
     assert evaluate.main([], client=client()) == 0
     out = capsys.readouterr().out
     assert "precision 1.0000" in out and "recall 1.0000" in out
+
+
+def test_the_difficulty_flag_resets_the_mock_catalog_before_fetching():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path, dict(request.url.params)))
+        if request.method == "POST":
+            return httpx.Response(200, json={"status": "reset", "difficulty": "hard"})
+        return fake_api(request)
+
+    http = httpx.Client(base_url="http://mock", transport=httpx.MockTransport(handler))
+    assert evaluate.main(["--difficulty", "hard"], client=http) == 0
+    assert calls[0] == ("POST", "/admin/reset", {"difficulty": "hard"})
+    assert [c[1] for c in calls[1:]] == ["/games", "/admin/ground-truth"]
+
+
+def test_labels_mode_scores_a_csv_without_touching_the_network(tmp_path, capsys):
+    path = tmp_path / "labels.csv"
+    path.write_text(
+        "title,developer,label\n"
+        "Neon Harbor,Vega Interactive,a\n"
+        "Neon Harbor: Deluxe Edition,Vega Interactive Inc.,a\n"
+        "Neon Harbor 2,Vega Interactive,b\n",
+        encoding="utf-8",
+    )
+    assert evaluate.main(["--labels", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "hand-labeled sample" in out and "precision 1.0000" in out and "recall 1.0000" in out

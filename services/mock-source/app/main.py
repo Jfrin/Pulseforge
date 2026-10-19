@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 
@@ -9,10 +10,11 @@ from .models import Chaos, ReviewBomb
 from .state import MockState, decode_cursor, encode_cursor, paginate
 
 
-def create_app(seed: int | None = None, base_games: int | None = None) -> FastAPI:
+def create_app(seed: int | None = None, base_games: int | None = None, difficulty: str | None = None) -> FastAPI:
     state = MockState(
         seed if seed is not None else int(os.getenv("MOCK_SEED", "42")),
         base_games if base_games is not None else int(os.getenv("MOCK_BASE_GAMES", "200")),
+        difficulty if difficulty is not None else os.getenv("MOCK_DIFFICULTY", "easy"),
     )
     app = FastAPI(title="PulseForge mock source")
 
@@ -82,9 +84,10 @@ def create_app(seed: int | None = None, base_games: int | None = None) -> FastAP
         return state.ground_truth
 
     @app.post("/admin/reset")
-    def reset() -> dict:
-        state.reset()
-        return {"status": "reset"}
+    def reset(difficulty: Literal["easy", "hard"] | None = None) -> dict:
+        """Reseed the catalog; `?difficulty=hard` switches to the harder entity-resolution catalog."""
+        state.reset(difficulty)
+        return {"status": "reset", "difficulty": state.difficulty}
 
     return app
 

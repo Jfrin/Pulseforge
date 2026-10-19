@@ -67,10 +67,44 @@ def test_stopwords_accents_ampersands_and_punctuation_do_not_matter():
         ("Neon Harbor", set()),
         ("Neon Harbor 2", {"2"}),
         ("Neon Harbor 2: Deluxe Edition", {"2"}),
-        ("Final Fantasy VII", {"vii"}),
+        ("Final Fantasy VII", {"7"}),
+        ("Neon Harbor III", {"3"}),
         ("Final Fantasy X", {"x"}),
         ("Project X Zone 2", {"2"}),
     ],
 )
 def test_sequel_numbers_are_extracted(title, numerals):
     assert analyze_title(title).numerals == numerals
+
+
+def test_roman_and_arabic_sequel_numbers_become_the_same_key():
+    assert analyze_title("Neon Harbor II").match_key == analyze_title("Neon Harbor 2").match_key == "neon harbor 2"
+    assert analyze_title("Neon Harbor II: Deluxe Edition").numerals == {"2"}
+
+
+def test_a_lone_trailing_v_or_x_is_never_converted_so_mega_man_x_is_not_mega_man_10():
+    assert analyze_title("Mega Man X").match_key == "mega man x"
+    assert analyze_title("Mega Man X").match_key != analyze_title("Mega Man 10").match_key
+
+
+@pytest.mark.parametrize(
+    "title, key",
+    [
+        ("Borderlands 3 Super Deluxe Edition", "borderlands 3"),
+        ("Prey: Digital Deluxe Edition", "prey"),
+        ("Sid Meier's Civilization V: The Complete Edition", "sid meiers civilization v"),
+    ],
+)
+def test_real_world_edition_spellings_reduce_to_the_base_title(title, key):
+    result = analyze_title(title)
+    assert result.match_key == key and result.variant == "edition"
+
+
+def test_a_trailing_stopword_left_by_stripping_does_not_hide_the_sequel_number():
+    assert analyze_title("Sid Meier's Civilization V: The Complete Edition").numerals == {"v"}
+    assert analyze_title("Sid Meier's Civilization V").numerals == {"v"}
+
+
+def test_edition_modifiers_are_only_stripped_next_to_a_real_marker():
+    assert analyze_title("Digital Dreams").match_key == "digital dreams"
+    assert analyze_title("Super Mario Adventure").match_key == "super mario adventure"

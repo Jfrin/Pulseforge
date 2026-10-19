@@ -22,3 +22,8 @@ lint:      ## ruff, format check and mypy for every service (what CI runs)
 
 evaluate:  ## entity-resolution precision/recall against the mock catalog
 	$(COMPOSE) --profile tools run --rm --build processing python -m app.evaluate
+evaluate-hard:   ## entity resolution on the hard mock catalog (resets the mock to hard)
+	$(COMPOSE) --profile tools run --rm --build processing python -m app.evaluate --difficulty hard
+
+evaluate-labels: ## entity resolution on the hand-labeled CSV
+	$(COMPOSE) --profile tools run --rm --build processing python -m app.evaluate --labels /data/labels.example.csv --examples 20
