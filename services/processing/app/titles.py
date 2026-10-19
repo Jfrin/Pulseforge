@@ -33,6 +33,7 @@ _MARKERS = sorted(
     [(p, "edition") for p in _EDITION] + [(p, "dlc") for p in _DLC] + [(p, "bundle") for p in _BUNDLE],
     key=lambda item: -len(item[0]),
 )  # longest phrase first, so "game of the year edition" wins over "edition"
+_MARKER_WORDS = frozenset(word for phrase, _ in _MARKERS for word in phrase)
 _ROMAN = frozenset(
     {
         "ii",
@@ -85,16 +86,7 @@ def analyze_title(title: str) -> TitleKey:
     tokens = tokenize(title)
     markers: list[str] = []
     variant = "base"
-    # A title consisting entirely of one marker phrase is still a title, not a variant.
-    if any(tuple(tokens) == phrase for phrase, _ in _MARKERS):
-        significant = [t for t in tokens if t not in STOPWORDS] or tokens
-        return TitleKey(
-            match_key=" ".join(significant),
-            variant=variant,
-            markers=tuple(markers),
-            numerals=_numerals(tokens),
-        )
-    stripped = True
+    stripped = not all(t in _MARKER_WORDS for t in tokens)  # "Deluxe Edition" alone is a title, not a variant
     while stripped:
         stripped = False
         for phrase, kind in _MARKERS:
