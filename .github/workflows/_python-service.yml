@@ -85,7 +85,7 @@ jobs:
       - name: Image tags
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/${{ inputs.service }}
           tags: |
