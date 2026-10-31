@@ -1,6 +1,6 @@
 httpx2>=2.0
 psycopg[binary,pool]>=3.1
 minio>=7.2
-fastapi>=0.110
+fastapi>=0.162.0
 uvicorn>=0.29
 websockets>=14,<17
