@@ -1,0 +1,32 @@
+name: Core pipeline
+on:
+  push:
+    paths: ["libs/**", "services/**", "infra/**", "tests/core/**", "docker-compose*.yml", "pyproject.toml", ".github/workflows/core.yml"]
+  pull_request:
+    paths: ["libs/**", "services/**", "infra/**", "tests/core/**", "docker-compose*.yml", "pyproject.toml", ".github/workflows/core.yml"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core unit and persistence tests
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm --build core-test pytest -v tests
+      - name: Lint, format, and types
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm core-test
+          sh -c "ruff check --config /app/pyproject.toml /libs /services tests &&
+          ruff format --check --config /app/pyproject.toml /libs /services tests && mypy /libs/pulseforge"
+      - name: Start isolated core stack
+        run: docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+      - name: Bronze to gold and alert acceptance
+        run: docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml run --rm --build e2e
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml logs --tail 100
+      - name: Clean test resources
+        if: always()
+        run: |
+          docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml down -v
+          docker compose -f docker-compose.yml -f docker-compose.test.yml down -v

@@ -15,6 +15,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from minio import Minio
+from minio.commonconfig import ENABLED, Filter
+from minio.error import S3Error
+from minio.lifecycleconfig import Expiration, LifecycleConfig, Rule
 
 from .connectors import Page
 
@@ -46,9 +49,13 @@ class MinioBronze:
         *,
         secure: bool = False,
         client: Minio | None = None,
+        retention_days: int | None = None,
     ) -> None:
         self._bucket = bucket
         self._client = client or Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
+        if retention_days is not None and retention_days < 1:
+            raise ValueError("retention_days must be positive")
+        self._retention_days = retention_days
 
     async def ensure_bucket(self) -> None:
         await asyncio.to_thread(self._ensure_bucket)
@@ -56,6 +63,24 @@ class MinioBronze:
     def _ensure_bucket(self) -> None:
         if not self._client.bucket_exists(self._bucket):
             self._client.make_bucket(self._bucket)
+        if self._retention_days is not None:
+            rules = []
+            try:
+                existing = self._client.get_bucket_lifecycle(self._bucket)
+                if existing:
+                    rules = [rule for rule in existing.rules if rule.rule_id != "pulseforge-bronze-retention"]
+            except S3Error as exc:
+                if exc.code != "NoSuchLifecycleConfiguration":
+                    raise
+            rules.append(
+                Rule(
+                    ENABLED,
+                    rule_filter=Filter(prefix="bronze/"),
+                    rule_id="pulseforge-bronze-retention",
+                    expiration=Expiration(days=self._retention_days),
+                )
+            )
+            self._client.set_bucket_lifecycle(self._bucket, LifecycleConfig(rules))
 
     async def land_page(
         self, source: str, *, fetched_cursor: str | None, page: Page, fetched_at: datetime | None = None

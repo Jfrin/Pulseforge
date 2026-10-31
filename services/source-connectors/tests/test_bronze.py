@@ -1,5 +1,11 @@
 import json
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
+import pytest
+from minio import Minio
+from minio.commonconfig import ENABLED, Filter
+from minio.lifecycleconfig import Expiration, LifecycleConfig, Rule
 
 from app.bronze import MinioBronze, NullBronze
 from app.connectors import Page
@@ -67,3 +73,18 @@ async def test_every_landing_gets_a_unique_key_so_nothing_is_overwritten():
 
 async def test_null_bronze_lands_nothing():
     assert await NullBronze().land_page("src", fetched_cursor=None, page=Page(records=[{"id": 1}])) is None
+
+
+@pytest.mark.parametrize("configured", [True, False])
+async def test_bronze_retention_preserves_other_lifecycle_rules(configured):
+    client = MagicMock(spec=Minio)
+    existing = Rule(ENABLED, rule_filter=Filter(prefix="other/"), rule_id="other", expiration=Expiration(days=90))
+    client.get_bucket_lifecycle.return_value = LifecycleConfig([existing]) if configured else None
+    sink = MinioBronze("unused:9000", "k", "s", "pulseforge", client=client, retention_days=30)
+    await sink.ensure_bucket()
+    bucket, config = client.set_bucket_lifecycle.call_args.args
+    assert bucket == "pulseforge"
+    if configured:
+        assert config.rules[0] is existing
+    assert config.rules[-1].rule_filter.prefix == "bronze/"
+    assert config.rules[-1].expiration.days == 30

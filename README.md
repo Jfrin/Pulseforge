@@ -8,6 +8,10 @@ PulseForge pulls public game-store data (product metadata, player counts, price 
 
 **Live demo:** _link here_ | **Walkthrough video:** _Loom link here_ | **Status:** _in development_
 
+**Working core pipeline:** run `docker compose up -d --build --wait`. See
+[core platform operations](docs/core-platform.md) for the implemented services, endpoints,
+configuration, recovery and end-to-end checks, and [plan.md](plan.md) for completion status.
+
 ---
 
 ## Problem

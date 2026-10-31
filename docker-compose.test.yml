@@ -36,3 +36,20 @@ services:
       context: ./services/processing
       target: test
     command: ["pytest", "-v"]
+
+  core-test:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql://test:test@test-db:5432/test
+      REDIS_URL: redis://redis:6379/1
+      AMQP_URL: amqp://${BROKER_USER:-pulseforge}:${BROKER_PASSWORD:-pulseforge}@rabbitmq:5672/
+      GOVERNANCE_POLICY_FILE: /config/governance.json
+    volumes:
+      - ./infra/config:/config:ro
+    depends_on:
+      test-db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}

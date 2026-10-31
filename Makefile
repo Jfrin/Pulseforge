@@ -14,11 +14,19 @@ test:      ## all unit and integration tests, in Docker
 	$(TEST) run --rm --build source-connectors-test
 	$(TEST) run --rm --build mock-source-test
 	$(TEST) run --rm --build processing-test
+	$(TEST) run --rm --build core-test pytest -v tests
 
 lint:      ## ruff, format check and mypy for every service (what CI runs)
 	$(TEST) run --rm source-connectors-test sh -c "ruff check . && ruff format --check . && mypy"
 	$(TEST) run --rm mock-source-test sh -c "ruff check . && ruff format --check . && mypy"
 	$(TEST) run --rm processing-test sh -c "ruff check . && ruff format --check . && mypy"
+	$(TEST) run --rm core-test sh -c "ruff check --config /app/pyproject.toml /libs /services tests && ruff format --check --config /app/pyproject.toml /libs /services tests && mypy /libs/pulseforge"
+
+.PHONY: e2e
+e2e:       ## isolated real-broker/object-store acceptance test
+	docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+	docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml run --rm --build e2e
+	docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml down -v
 
 evaluate:  ## entity-resolution precision/recall against the mock catalog
 	$(COMPOSE) --profile tools run --rm --build processing python -m app.evaluate

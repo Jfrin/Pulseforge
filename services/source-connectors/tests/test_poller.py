@@ -66,6 +66,33 @@ async def test_full_pass_emits_every_record_once_and_resets_snapshot_checkpoint(
     assert store.cursors["src"] is None  # snapshot finished: next pass starts over
 
 
+async def test_backpressure_blocks_fetch_without_advancing_checkpoint():
+    store = FakeStore()
+    source = conn(n=6, page_size=3)
+    p = poller(source, store)
+    blocked = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def gate():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            blocked.set()
+            await release.wait()
+
+    p.before_fetch = gate
+    task = asyncio.create_task(p.poll_once())
+    try:
+        await asyncio.wait_for(blocked.wait(), 1)
+        assert store.cursors["src"] == "3" and ids(store) == [0, 1, 2]
+        release.set()
+        assert (await asyncio.wait_for(task, 1)).new == 6
+        assert calls == 2 and ids(store) == list(range(6))
+    finally:
+        task.cancel()
+
+
 async def test_repolling_an_unchanged_snapshot_emits_nothing():
     store = FakeStore()
     p = poller(conn(), store)

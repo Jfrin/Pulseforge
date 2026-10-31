@@ -1,3 +1,32 @@
+x-core: &core
+  restart: on-failure
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
+
+x-core-env: &core-env
+  AMQP_URL: amqp://${BROKER_USER:-pulseforge}:${BROKER_PASSWORD:-pulseforge}@rabbitmq:5672/
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pulseforge}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
+  MINIO_BUCKET: ${MINIO_BUCKET:-pulseforge}
+  EVENT_RETENTION_DAYS: ${EVENT_RETENTION_DAYS:-30}
+
+x-core-db: &core-db
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_DB: pulseforge
+    POSTGRES_USER: pulseforge
+    POSTGRES_PASSWORD: ${CORE_DB_PASSWORD:-pulseforge}
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U pulseforge -d pulseforge"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+
 services:
   mock-source:
     build:
@@ -65,11 +94,27 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pulseforge}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
       MINIO_BUCKET: ${MINIO_BUCKET:-pulseforge}
+      BRONZE_RETENTION_DAYS: ${BRONZE_RETENTION_DAYS:-30}
       CSV_IMPORT_DIR: /imports
       CSV_INTERVAL_S: ${CSV_INTERVAL_S:-30}
       STEAM_APP_IDS: ${STEAM_APP_IDS:-}   # empty = real Steam polling is OFF
       STEAM_INTERVAL_S: ${STEAM_INTERVAL_S:-300}
       STEAM_MAX_PAGES: ${STEAM_MAX_PAGES:-10}
+      BROKER_MANAGEMENT_URL: http://rabbitmq:15672
+      BROKER_USER: ${BROKER_USER:-pulseforge}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:-pulseforge}
+      QUEUE_LAG_THRESHOLD: ${QUEUE_LAG_THRESHOLD:-10000}
+      WEBHOOK_SOURCES: ${WEBHOOK_SOURCES:-}
+      SSE_SOURCES: ${SSE_SOURCES:-}
+      WEBSOCKET_SOURCES: ${WEBSOCKET_SOURCES:-}
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     restart: on-failure
     volumes:
       - ./imports:/imports:ro   # drop *.csv files here
@@ -80,21 +125,215 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   processing:
+    <<: *core
     build:
-      context: ./services/processing
+      context: .
+      dockerfile: infra/Dockerfile.core
       target: runtime
-    profiles: ["tools"]
+      args: {SERVICE: processing}
     environment:
+      <<: *core-env
+      SERVICE: processing
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@processing-db:5432/pulseforge
       PSEUDONYM_SALT: ${PSEUDONYM_SALT:-dev-only-salt-change-me-0123456789}
+      ENVELOPE_SOURCES: ${ENVELOPE_SOURCES:-}
       MOCK_SOURCE_URL: http://mock-source:8000
     depends_on:
-      mock-source:
-        condition: service_healthy
+      processing-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
     volumes:
       - ./services/processing/data:/data:ro
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${BROKER_USER:-pulseforge}
+      RABBITMQ_DEFAULT_PASS: ${BROKER_PASSWORD:-pulseforge}
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  processing-db:
+    <<: *core-db
+    volumes: ["processing_data:/var/lib/postgresql/data"]
+  orchestrator-db:
+    <<: *core-db
+    volumes: ["orchestrator_data:/var/lib/postgresql/data"]
+  governance-db:
+    <<: *core-db
+    volumes: ["governance_data:/var/lib/postgresql/data"]
+  export-db:
+    <<: *core-db
+    volumes: ["export_data:/var/lib/postgresql/data"]
+  analytics-db:
+    <<: *core-db
+    volumes: ["analytics_data:/var/lib/postgresql/data"]
+  notification-db:
+    <<: *core-db
+    volumes: ["notification_data:/var/lib/postgresql/data"]
+
+  source-relay:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: source-connectors}
+    environment:
+      <<: *core-env
+      SERVICE: source-connectors
+      DATABASE_URL: postgresql://${SC_DB_USER:-pulseforge}:${SC_DB_PASSWORD:-pulseforge}@source-connectors-db:5432/source_connectors
+    depends_on:
+      source-connectors: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  source-adapters:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: source-adapters}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MOCK_SOURCE_URL: http://mock-source:8000
+      ENRICHMENT_API_KEY: ${ENRICHMENT_API_KEY:-dev-stub-key}
+      KEYED_STUB_FILE: /config/keyed-stub.json
+    volumes:
+      - ./infra/config:/config:ro
+    depends_on:
+      mock-source: {condition: service_healthy}
+
+  orchestrator:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: orchestrator}
+    environment:
+      <<: *core-env
+      SERVICE: orchestrator
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@orchestrator-db:5432/pulseforge
+      REDIS_URL: redis://redis:6379/0
+      ADAPTER_URL: http://source-adapters:8000
+      ENRICHMENT_API_KEY: ${ENRICHMENT_API_KEY:-dev-stub-key}
+      SOURCE_RATE: ${SOURCE_RATE:-5}
+    depends_on:
+      orchestrator-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      source-adapters: {condition: service_healthy}
+
+  governance:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: governance}
+    environment:
+      <<: *core-env
+      SERVICE: governance
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@governance-db:5432/pulseforge
+      GOVERNANCE_POLICY_FILE: /config/governance.json
+    volumes:
+      - ./infra/config:/config:ro
+    depends_on:
+      governance-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  export:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: export}
+    environment:
+      <<: *core-env
+      SERVICE: export
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@export-db:5432/pulseforge
+    ports: ["8082:8000"]
+    depends_on:
+      export-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      minio: {condition: service_healthy}
+
+  analytics:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: analytics}
+    environment:
+      <<: *core-env
+      SERVICE: analytics
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@analytics-db:5432/pulseforge
+      DETECTOR_WINDOW_S: ${DETECTOR_WINDOW_S:-86400}
+      DETECTOR_NEGATIVE_THRESHOLD: ${DETECTOR_NEGATIVE_THRESHOLD:-0.7}
+      DETECTOR_MIN_REVIEWS: ${DETECTOR_MIN_REVIEWS:-100}
+      DETECTOR_COOLDOWN_S: ${DETECTOR_COOLDOWN_S:-43200}
+      QUEUE_LAG_THRESHOLD: ${QUEUE_LAG_THRESHOLD:-10000}
+    ports: ["8083:8000"]
+    depends_on:
+      analytics-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  notification:
+    <<: *core
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: runtime
+      args: {SERVICE: notification}
+    environment:
+      <<: *core-env
+      SERVICE: notification
+      DATABASE_URL: postgresql://pulseforge:${CORE_DB_PASSWORD:-pulseforge}@notification-db:5432/pulseforge
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_FROM: ${SMTP_FROM:-pulseforge@localhost}
+      SMTP_TO: ${SMTP_TO:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+    ports: ["8084:8000"]
+    depends_on:
+      notification-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
 
 volumes:
   source_connectors_pgdata:
   minio_data:
+  rabbitmq_data:
+  redis_data:
+  processing_data:
+  orchestrator_data:
+  governance_data:
+  export_data:
+  analytics_data:
+  notification_data:

@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "sources": {
+    "mock-games": {"allow": true, "retention_days": 30},
+    "mock-reviews": {"allow": true, "retention_days": 30},
+    "csv-import": {"allow": true, "retention_days": 30},
+    "steam-games": {"allow": true, "retention_days": 30},
+    "steam-reviews": {"allow": true, "retention_days": 30}
+  },
+  "suppression": [],
+  "erasure": []
+}

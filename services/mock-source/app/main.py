@@ -61,6 +61,12 @@ def create_app(seed: int | None = None, base_games: int | None = None, difficult
             items = [r for r in items if r["game_id"] == game_id]
         return page(items, cursor, limit, resume=True)
 
+    @app.get("/games/{external_id}", dependencies=[Depends(chaos_gate)])
+    def game(external_id: str) -> dict:
+        if external_id not in state.game_index:
+            raise HTTPException(404, "unknown game")
+        return dict(state.game_index[external_id])
+
     # ---- admin: control the scenario -----------------------------------
     @app.get("/admin/chaos")
     def get_chaos() -> Chaos:

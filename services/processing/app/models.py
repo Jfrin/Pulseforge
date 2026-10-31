@@ -47,6 +47,9 @@ class Game(_Frozen):
     lineage: Lineage
     warnings: tuple[Issue, ...] = ()
 
+    adult_content: bool = False
+    patch_event: bool = False
+
 
 class Review(_Frozen):
     """Review text is deliberately dropped (data minimisation): only its length is kept."""

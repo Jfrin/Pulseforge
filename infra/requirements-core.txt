@@ -1,0 +1,11 @@
+aio-pika>=9.4,<10
+psycopg[binary,pool]>=3.1,<4
+httpx2>=2.0,<3
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+minio>=7.2,<8
+pydantic>=2.6,<3
+rapidfuzz>=3.5,<4
+pyarrow>=19,<24
+redis>=5,<8
+websockets>=14,<17

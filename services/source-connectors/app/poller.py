@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
 
 from .bronze import BronzeSink, NullBronze
@@ -62,13 +62,15 @@ class Poller:
         self._bronze: BronzeSink = bronze or NullBronze()
         self._poll_interval_s = poll_interval_s
         self._retry_delay_s = retry_delay_s
+        self.before_fetch: Callable[[], Awaitable[None]] | None = None
+        self.report: Callable[[str, bool, int, int], Awaitable[None]] | None = None
 
     async def poll_once(self) -> PassResult:
         """Run one pass until the source says it has no more."""
         name = self._connector.name
         start = await self._store.get_cursor(name)
         new = duplicates = 0
-        async for cursor, page in iter_pages(self._connector, start_cursor=start):
+        async for cursor, page in iter_pages(self._connector, start_cursor=start, before_fetch=self.before_fetch):
             # Land the raw page FIRST. If object storage is down the pass fails here, the checkpoint
             # stays put and the page is fetched again later: no record ever skips bronze.
             # Pages with nothing new (a snapshot source re-read) are not landed again.
@@ -95,9 +97,16 @@ class Poller:
             try:
                 res = await self.poll_once()
                 log.info("source=%s pass complete new=%d duplicates=%d", name, res.new, res.duplicates)
+                if self.report:
+                    await self.report(name, True, res.new, res.duplicates)
             except Exception as exc:  # checkpoint was not advanced past the failed page
                 delay = self._retry_delay_s
                 log.warning("source=%s pass failed (%s: %s); retrying in %.1fs", name, type(exc).__name__, exc, delay)
+                if self.report:
+                    try:
+                        await self.report(name, False, 0, 0)
+                    except Exception:
+                        log.exception("could not persist source health")
             try:
                 await asyncio.wait_for(stop.wait(), timeout=delay)
             except TimeoutError:

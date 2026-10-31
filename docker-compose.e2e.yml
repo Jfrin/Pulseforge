@@ -1,0 +1,42 @@
+# Isolated, small real stack: docker compose -p pulseforge-e2e -f docker-compose.yml -f docker-compose.e2e.yml ...
+services:
+  mock-source:
+    ports: !reset []
+    environment:
+      MOCK_BASE_GAMES: 8
+  source-connectors-db:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  rabbitmq:
+    ports: !reset []
+  source-connectors:
+    ports: !reset []
+    environment:
+      BATCH_SIZE: 50
+      BATCH_MAX_AGE_S: 1
+      BATCH_TICK_S: 1
+      POLL_INTERVAL_S: 1
+      CATALOG_INTERVAL_S: 60
+      STEAM_APP_IDS: ""
+  export:
+    ports: !reset []
+  analytics:
+    ports: !reset []
+  notification:
+    ports: !reset []
+    environment:
+      SLACK_WEBHOOK_URL: ""
+      SMTP_HOST: ""
+  e2e:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.core
+      target: test
+    command: ["python", "tests/e2e.py"]
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pulseforge}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-pulseforge-minio}
+      MINIO_BUCKET: ${MINIO_BUCKET:-pulseforge}

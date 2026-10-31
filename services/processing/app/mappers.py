@@ -7,6 +7,7 @@ Issue details never contain raw values.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
@@ -104,6 +105,8 @@ def map_game(rec: dict[str, Any], lineage: Lineage, pseudonymize: PseudonymizeFn
         observed_at=observed_at,
         lineage=lineage,
         warnings=tuple(issues),
+        adult_content=parse_bool(rec.get("adult_content")) is True,
+        patch_event=parse_bool(rec.get("patch_event")) is True,
     )
     return game, issues
 
@@ -214,4 +217,40 @@ def register_mapper(source: str, mapper: Mapper) -> None:
 
 
 def mapper_for(source: str) -> Mapper | None:
+    if source == "steam-games":
+        return map_steam_game
+    if source in os.getenv("ENVELOPE_SOURCES", "").split(",") and source:
+        return map_envelope
     return MAPPERS.get(source)
+
+
+def map_envelope(rec: dict[str, Any], lineage: Lineage, pseudonymize: PseudonymizeFn, now: datetime) -> MapOutcome:
+    data = rec.get("data", rec)
+    if not isinstance(data, dict):
+        return None, [Issue(field="data", code="malformed", severity="error")]
+    mapper = map_mock_review if "review_id" in data else map_game
+    return mapper(data, lineage, pseudonymize, now)
+
+
+def map_steam_game(rec: dict[str, Any], lineage: Lineage, pseudonymize: PseudonymizeFn, now: datetime) -> MapOutcome:
+    app_id = str(rec.get("app_id", ""))
+    entry = rec.get("store", {}).get(app_id, {})
+    data = entry.get("data", {}) if entry.get("success") else {}
+    price = data.get("price_overview", {})
+    return map_game(
+        {
+            "external_id": app_id,
+            "title": data.get("name"),
+            "type": data.get("type"),
+            "developer": ", ".join(data.get("developers", [])),
+            "publisher": ", ".join(data.get("publishers", [])),
+            "price_cents": price.get("final", 0 if data.get("is_free") else None),
+            "currency": price.get("currency"),
+            "player_count": rec.get("players", {}).get("response", {}).get("player_count"),
+            "updated_at": now.isoformat(),
+            "adult_content": data.get("required_age", 0) in (18, "18"),
+        },
+        lineage,
+        pseudonymize,
+        now,
+    )

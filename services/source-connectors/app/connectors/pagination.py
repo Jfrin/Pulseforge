@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from .base import Page, SourceConnector
 
@@ -9,6 +9,7 @@ async def iter_pages(
     connector: SourceConnector,
     start_cursor: str | None = None,
     max_pages: int | None = None,
+    before_fetch: Callable[[], Awaitable[None]] | None = None,
 ) -> AsyncIterator[tuple[str | None, Page]]:
     """Walk a connector page by page, yielding `(cursor_used, page)`.
 
@@ -18,6 +19,8 @@ async def iter_pages(
     cursor = start_cursor
     count = 0
     while True:
+        if before_fetch:
+            await before_fetch()
         page = await connector.fetch(cursor)
         yield cursor, page
         count += 1

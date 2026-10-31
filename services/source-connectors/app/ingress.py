@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from .bronze import BronzeSink
 from .connectors.inbox import InboxConnector
 from .connectors.sse import SseConnector
+from .connectors.websocket import WebSocketConnector
 from .inbox import Inbox
 from .poller import Poller
 from .store import Store
@@ -97,4 +98,10 @@ async def build_ingress(store: Store, bronze: BronzeSink, *, retry_delay_s: floa
             )
         )
         out.sources.append(sse.name)
+    for name, url in parse_pairs(os.getenv("WEBSOCKET_SOURCES", "")).items():
+        websocket = WebSocketConnector(f"websocket-{name}", url)
+        out.pollers.append(
+            Poller(websocket, store, id_field="event_id", bronze=bronze, poll_interval_s=5, retry_delay_s=retry_delay_s)
+        )
+        out.sources.append(websocket.name)
     return out

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
+
+from fastapi import FastAPI
 
 from .batcher import Batcher
 from .bronze import BronzeSink, MinioBronze, NullBronze
 from .config import Config
 from .connectors import STEAM_VOLATILE_FIELDS, CsvDirectoryConnector, MockSourceConnector, SteamReviewsConnector
+from .connectors.steam_games import SteamGamesConnector
+from .control import Control
 from .ingress import build_ingress
 from .poller import Poller
 from .store import Store
@@ -29,6 +34,7 @@ async def main() -> None:
             cfg.minio_secret_key,
             cfg.minio_bucket,
             secure=cfg.minio_secure,
+            retention_days=int(os.getenv("BRONZE_RETENTION_DAYS", "30")),
         )
         await minio_bronze.ensure_bucket()
         bronze = minio_bronze
@@ -37,7 +43,7 @@ async def main() -> None:
 
     games = MockSourceConnector("mock-games", cfg.mock_source_url, "/games", cfg.page_size)
     reviews = MockSourceConnector("mock-reviews", cfg.mock_source_url, "/reviews", cfg.page_size)
-    connectors: list[MockSourceConnector | SteamReviewsConnector] = [games, reviews]
+    connectors: list[MockSourceConnector | SteamReviewsConnector | SteamGamesConnector] = [games, reviews]
     csv_import = CsvDirectoryConnector("csv-import", cfg.csv_import_dir, cfg.page_size) if cfg.csv_import_dir else None
 
     steam = (
@@ -52,6 +58,9 @@ async def main() -> None:
     )
     if steam:
         connectors.append(steam)
+    steam_games = SteamGamesConnector(cfg.steam_app_ids, min_interval_s=cfg.steam_min_interval_s) if steam else None
+    if steam_games:
+        connectors.append(steam_games)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -78,6 +87,18 @@ async def main() -> None:
         ),
     ]
     sources = [games.name, reviews.name]
+    if steam_games:
+        pollers.append(
+            Poller(
+                steam_games,
+                store,
+                id_field="app_id",
+                bronze=bronze,
+                poll_interval_s=cfg.steam_interval_s,
+                retry_delay_s=cfg.retry_delay_s,
+            )
+        )
+        sources.append(steam_games.name)
     if csv_import:
         pollers.append(
             Poller(
@@ -104,8 +125,25 @@ async def main() -> None:
         )
         sources.append(steam.name)
     ingress = await build_ingress(store, bronze, retry_delay_s=cfg.retry_delay_s)
+    if ingress.webhook_app is None:
+        ingress.webhook_app = FastAPI(title="PulseForge source connectors")
+
+        @ingress.webhook_app.get("/health")
+        async def health() -> dict[str, str]:
+            return {"status": "ok"}
+
+    @ingress.webhook_app.get("/ready")
+    async def ready() -> dict[str, bool]:
+        async with store.pool.connection() as conn:
+            await conn.execute("SELECT 1")
+        return {"ready": True}
+
     pollers.extend(ingress.pollers)
     sources.extend(ingress.sources)
+    control = Control(store, stop)
+    for poller in pollers:
+        poller.before_fetch = control.wait
+        poller.report = control.report
     try:
         batcher = Batcher(
             store,
@@ -123,6 +161,7 @@ async def main() -> None:
         for c in connectors:
             await c.aclose()
         await ingress.aclose()
+        await control.aclose()
         await store.close()
 
 
