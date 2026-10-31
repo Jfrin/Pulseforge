@@ -77,6 +77,19 @@ async def check_product(tx, product, policy, now):
     checked = govern(product, policy, now)
     decision = checked["governance"]
     decision["audit_id"] = await tx.audit(checked["product_id"], dict(decision))
+    # Keep only active pseudonyms in this service's private state for future policy sweeps.
+    # The checked record and all outgoing events remain free of reviewer identities.
+    source = copy.deepcopy(checked)
+    reviewers = {
+        (r["source"], r["review_id"]): r["reviewer"]
+        for r in product.get("reviews", [])
+        if r.get("reviewer") is not None
+    }
+    for review in source["reviews"]:
+        reviewer = reviewers.get((review["source"], review["review_id"]))
+        if reviewer is not None:
+            review["reviewer"] = reviewer
+    await tx.put("policy_inputs", checked["product_id"], source)
     await tx.put("records", checked["product_id"], checked)
     return checked
 
@@ -101,7 +114,8 @@ async def sweep(tx, *, now=None, force=False):
         )
         changed = decision["policy_version"] != policy["version"]
         if force or due or expired or changed:
-            checked.append(await check_product(tx, product, policy, now))
+            source = await tx.get("policy_inputs", product["product_id"], product)
+            checked.append(await check_product(tx, source, policy, now))
     if checked:
         await tx.emit(
             "GovernanceChecked",

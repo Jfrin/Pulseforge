@@ -77,6 +77,9 @@ to re-evaluate stored records on the next scheduler tick. Otherwise active recor
 against suppression every 30 days, and expired reviews are checked every minute. Blocked
 records emit tombstones; every decision gets a timestamped audit row protected against SQL
 UPDATE, DELETE and TRUNCATE. Tombstones remain irreversible for erased content.
+The governance database retains active reviewer pseudonyms privately for later policy rechecks;
+they are removed when reviews expire or are suppressed and never included in outgoing events.
+Reviews stored before this behavior was added require re-ingestion to enable pseudonym-based rechecks.
 
 Bronze objects receive a prefix-scoped lifecycle expiration (`BRONZE_RETENTION_DAYS`, default
 30); existing unrelated lifecycle rules are preserved. Delivered outbox bodies and drained

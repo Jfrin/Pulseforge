@@ -35,7 +35,9 @@ async def handle(tx, event):
     assignments = resolver.assignments()
     reviews = await tx.get("silver", "reviews", {})
     old_assignments = {key: review.get("product_id") for key, review in reviews.items()}
+    old_refs = {key: review["game_ref"] for key, review in reviews.items()}
     redirects = {}
+    moved_reviews = {}
     for review in result.reviews:
         reviews[f"{review.source}:{review.review_id}"] = review.model_dump(mode="json")
     # Bound silver review retention; raw content is never present in silver.
@@ -48,7 +50,11 @@ async def handle(tx, event):
             pid = "p_" + hashlib.sha256(f"{source}\x1f{review['game_ref']}".encode()).hexdigest()[:12]
         old_pid = old_assignments.get(key)
         if old_pid and old_pid != pid:
-            redirects[old_pid] = pid
+            if old_refs[key] == review["game_ref"]:
+                redirects[old_pid] = pid
+            moved_reviews.setdefault(old_pid, []).append(
+                {"source": review["source"], "review_id": review["review_id"], "reason": "reassigned"}
+            )
         review["product_id"] = pid
         # Re-emit affected aggregates when late catalog records resolve earlier reviews.
         affected.add(pid)
@@ -60,29 +66,40 @@ async def handle(tx, event):
         products[pid]["members"].append({"source": game["source"], "external_id": game["external_id"]})
     for canonical in resolver.products():
         products[canonical.product_id]["title"] = canonical.title
+    # A review edit can change its game reference without retiring the old catalog product.
+    # Recompute that product and tell downstream consumers to remove the old assignment.
+    remaining = {review["product_id"] for review in reviews.values()}
+    retired = {pid for pid in redirects if pid not in products and pid not in remaining}
+    affected.update(set(moved_reviews) - retired)
     output = []
     for pid in sorted(affected):
         related = [r for r in reviews.values() if r["product_id"] == pid]
+        previous = await tx.get("products", pid, {})
         if pid not in products:
-            ref = related[0]
-            products[pid] = {
-                "product_id": pid,
-                "title": None,
-                "source": ref["source"],
-                "external_id": ref["game_ref"],
-                "lineage": ref["lineage"],
-            }
+            if related:
+                ref = related[0]
+                products[pid] = {
+                    "product_id": pid,
+                    "title": None,
+                    "source": ref["source"],
+                    "external_id": ref["game_ref"],
+                    "lineage": ref["lineage"],
+                }
+            else:
+                products[pid] = dict(previous)
+                products[pid].pop("review_tombstones", None)
         product = products[pid]
         stats = review_stats(related, now)
-        previous = await tx.get("products", pid, {})
         product.update(stats)
         product.update(score(stats, product, previous))
         product["reviews"] = related
+        if pid in moved_reviews:
+            product["review_tombstones"] = moved_reviews[pid]
         await tx.put("products", pid, product)
         output.append(product)
     for old_pid, new_pid in redirects.items():
         previous = await tx.get("products", old_pid)
-        if previous and old_pid not in products:
+        if previous and old_pid in retired:
             previous.update(redirect_to=new_pid, reviews=[], review_count=0, negative_count=0, negative_share=0)
             await tx.put("products", old_pid, previous)
             output.append(previous)
